@@ -11,7 +11,6 @@ import numpy as np
 from sklearn.datasets import load_breast_cancer
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -20,8 +19,6 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-
-from sklearn.model_selection import train_test_split
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -34,6 +31,8 @@ EPOCHS = 20000
 THRESHOLDS = [0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80]
 THRESHOLD_COLUMNS = ["threshold", "tn", "fp", "fn", "tp", "accuracy", "precision", "recall", "f1"]
 RESULT_COLUMNS = ["split", "model", "policy"] + THRESHOLD_COLUMNS + ["log_loss"]
+
+
 # ----------------------------------------------------------------------
 # Part 1: Score -> probability -> class
 # ----------------------------------------------------------------------
@@ -314,7 +313,7 @@ def main() -> None:
 
     sk_model, baseline = fit_reference_models(X_train, y_train)
     report_comparison(beta, sk_model, baseline, X_val)
-    
+
     p_val_numpy = predict_proba_numpy(X_val, beta)
     selected_threshold, threshold_rows = select_threshold(y_val, p_val_numpy)
 
