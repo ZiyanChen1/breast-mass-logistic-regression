@@ -1,0 +1,5 @@
+# Tested with Python 3.14.4 on Windows
+# Tested versions: numpy 2.5.4, scikit-learn 1.9.1, matplotlib 3.11.2
+numpy>=1.23
+scikit-learn>=1.2
+matplotlib>=3.5
