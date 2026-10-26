@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 import matplotlib
@@ -10,6 +11,17 @@ import numpy as np
 from sklearn.datasets import load_breast_cancer
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    log_loss,
+    precision_score,
+    recall_score,
+)
+
+from sklearn.model_selection import train_test_split
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -19,7 +31,9 @@ FEATURES = ["mean radius", "mean texture"]
 RANDOM_STATE = 42
 LEARNING_RATE = 0.1
 EPOCHS = 20000
-
+THRESHOLDS = [0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80]
+THRESHOLD_COLUMNS = ["threshold", "tn", "fp", "fn", "tp", "accuracy", "precision", "recall", "f1"]
+RESULT_COLUMNS = ["split", "model", "policy"] + THRESHOLD_COLUMNS + ["log_loss"]
 # ----------------------------------------------------------------------
 # Part 1: Score -> probability -> class
 # ----------------------------------------------------------------------
@@ -192,6 +206,100 @@ def report_comparison(beta, sk_model, baseline, X_val) -> None:
     print()
 
 
+# ----------------------------------------------------------------------
+# Part 5: Select a threshold on validation, then evaluate
+# ----------------------------------------------------------------------
+def evaluate(y_true: np.ndarray, prob: np.ndarray, threshold: float) -> dict:
+    y_pred = (prob >= threshold).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    return {
+        "threshold": threshold,
+        "tn": int(tn),
+        "fp": int(fp),
+        "fn": int(fn),
+        "tp": int(tp),
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, zero_division=0),
+        "recall": recall_score(y_true, y_pred, zero_division=0),
+        "f1": f1_score(y_true, y_pred, zero_division=0),
+        "log_loss": log_loss(y_true, prob, labels=[0, 1]),  # uses probabilities, not labels
+    }
+
+
+def select_threshold(y_val: np.ndarray, p_val_numpy: np.ndarray) -> tuple[float, list[dict]]:
+    rows = [evaluate(y_val, p_val_numpy, t) for t in THRESHOLDS]
+    best_f1 = max(r["f1"] for r in rows)
+    selected = min(r["threshold"] for r in rows if np.isclose(r["f1"], best_f1))  # tie -> smallest
+
+    print("Part 5: threshold selection (NumPy model, validation data only)")
+    print(f"  {'threshold':>9}{'TN':>5}{'FP':>5}{'FN':>5}{'TP':>5}{'accuracy':>10}{'precision':>11}{'recall':>9}{'F1':>9}")
+    for r in rows:
+        marker = "  <- selected" if r["threshold"] == selected else ""
+        print(f"  {r['threshold']:9.2f}{r['tn']:5d}{r['fp']:5d}{r['fn']:5d}{r['tp']:5d}"
+              f"{r['accuracy']:10.4f}{r['precision']:11.4f}{r['recall']:9.4f}{r['f1']:9.4f}{marker}")
+    print(f"  Selected threshold = {selected:.2f} (highest validation F1; ties go to the smallest threshold)")
+    print("  Models, scaler, and threshold are now frozen before looking at the test set.")
+    print()
+    return selected, rows
+
+
+def final_evaluation(selected: float, probabilities: dict, y_by_split: dict) -> list[dict]:
+    configurations = [
+        ("baseline", "default", 0.50),
+        ("numpy", "default", 0.50),
+        ("numpy", "selected", selected),
+        ("sklearn", "default", 0.50),
+        ("sklearn", "selected", selected),
+    ]
+    rows = []
+    for split in ["validation", "test"]:
+        for model, policy, threshold in configurations:
+            result = evaluate(y_by_split[split], probabilities[split][model], threshold)
+            rows.append({"split": split, "model": model, "policy": policy, **result})
+    return rows
+
+
+def print_results_table(rows: list[dict]) -> None:
+    print("Final evaluation (positive class: 1 = malignant)")
+    header = (f"  {'split':<11}{'model':<9}{'policy':<9}{'thresh':>7}{'TN':>5}{'FP':>5}{'FN':>5}{'TP':>5}"
+              f"{'accuracy':>10}{'precision':>11}{'recall':>9}{'F1':>9}{'log_loss':>10}")
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+    for r in rows:
+        print(f"  {r['split']:<11}{r['model']:<9}{r['policy']:<9}{r['threshold']:7.2f}"
+              f"{r['tn']:5d}{r['fp']:5d}{r['fn']:5d}{r['tp']:5d}{r['accuracy']:10.4f}"
+              f"{r['precision']:11.4f}{r['recall']:9.4f}{r['f1']:9.4f}{r['log_loss']:10.4f}")
+    print("  TN = benign predicted benign, FP = benign predicted malignant,")
+    print("  FN = malignant predicted benign (missed cancer), TP = malignant predicted malignant.")
+    print("  Precision/recall/F1 use zero_division=0: the baseline never predicts malignant, so its precision is reported as 0.")
+    print()
+
+
+def print_confusion_matrices(rows: list[dict], split: str) -> None:
+    print(f"Confusion matrices on the {split} set (rows = actual, columns = predicted)")
+    for r in rows:
+        if r["split"] != split:
+            continue
+        print(f"  {r['model']} / {r['policy']} (threshold {r['threshold']:.2f})")
+        print(f"    {'':<20}{'Pred benign (0)':>17}{'Pred malignant (1)':>20}")
+        print(f"    {'Actual benign (0)':<20}{r['tn']:>17d}{r['fp']:>20d}")
+        print(f"    {'Actual malignant (1)':<20}{r['fn']:>17d}{r['tp']:>20d}")
+    print()
+
+
+# ----------------------------------------------------------------------
+# Part 6: Export results
+# ----------------------------------------------------------------------
+def write_csv(rows: list[dict], columns: list[str], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(columns)
+        for r in rows:
+            writer.writerow([f"{r[c]:.6f}" if isinstance(r[c], float) else r[c] for c in columns])
+    print(f"  Saved: {path}")
+
+
 def main() -> None:
     part1_cases()
 
@@ -207,5 +315,31 @@ def main() -> None:
     sk_model, baseline = fit_reference_models(X_train, y_train)
     report_comparison(beta, sk_model, baseline, X_val)
     
+    p_val_numpy = predict_proba_numpy(X_val, beta)
+    selected_threshold, threshold_rows = select_threshold(y_val, p_val_numpy)
+
+    # Test probabilities are computed only after the threshold is frozen.
+    probabilities = {
+        "validation": {
+            "baseline": predict_proba_positive(baseline, X_val),
+            "numpy": p_val_numpy,
+            "sklearn": predict_proba_positive(sk_model, X_val),
+        },
+        "test": {
+            "baseline": predict_proba_positive(baseline, X_test),
+            "numpy": predict_proba_numpy(X_test, beta),
+            "sklearn": predict_proba_positive(sk_model, X_test),
+        },
+    }
+    results = final_evaluation(selected_threshold, probabilities, {"validation": y_val, "test": y_test})
+    print_results_table(results)
+    print_confusion_matrices(results, "test")
+
+    print("Part 6: exported files")
+    write_csv(threshold_rows, THRESHOLD_COLUMNS, REPORT_DIR / "threshold_results.csv")
+    write_csv(results, RESULT_COLUMNS, REPORT_DIR / "assignment_results.csv")
+    print(f"  Saved: {REPORT_DIR / 'training_loss.png'}")
+
+
 if __name__ == "__main__":
     main()
