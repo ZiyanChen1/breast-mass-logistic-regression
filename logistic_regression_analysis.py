@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")  # save plots to files without opening a window
+import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import train_test_split
@@ -11,7 +15,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 REPORT_DIR = PROJECT_ROOT / "reports"
 FEATURES = ["mean radius", "mean texture"]
 RANDOM_STATE = 42
-
+LEARNING_RATE = 0.1
+EPOCHS = 20000
 
 # ----------------------------------------------------------------------
 # Part 1: Score -> probability -> class
@@ -86,6 +91,70 @@ def scale_features(X, train_idx, val_idx, test_idx):
     return scaler.transform(X[train_idx]), scaler.transform(X[val_idx]), scaler.transform(X[test_idx])
 
 
+# ----------------------------------------------------------------------
+# Part 3: NumPy logistic regression (full-batch gradient descent)
+# ----------------------------------------------------------------------
+def add_intercept(X: np.ndarray) -> np.ndarray:
+    """Add a leading column of ones so beta_0 is learned like the other coefficients."""
+    return np.column_stack([np.ones(len(X)), X])
+
+
+def bce_loss(X_aug: np.ndarray, y: np.ndarray, beta: np.ndarray) -> float:
+    """Stable mean binary cross-entropy (log loss); never takes log(0)."""
+    z = X_aug @ beta
+    return float(np.mean(np.logaddexp(0.0, z) - y * z))
+
+
+def fit_numpy_logistic(X_train, y_train, learning_rate: float, epochs: int):
+    X_aug = add_intercept(X_train)
+    n = len(y_train)
+    beta = np.zeros(X_aug.shape[1])              # beta_0, beta_1, beta_2 all start at 0
+    losses = [bce_loss(X_aug, y_train, beta)]    # loss before training
+
+    for _ in range(epochs):
+        p = sigmoid(X_aug @ beta)                # predicted probability of malignant
+        gradient = X_aug.T @ (p - y_train) / n   # gradient of mean cross-entropy
+        beta = beta - learning_rate * gradient   # update all three coefficients together
+        losses.append(bce_loss(X_aug, y_train, beta))
+
+    final_gradient = X_aug.T @ (sigmoid(X_aug @ beta) - y_train) / n
+    return beta, np.array(losses), float(np.linalg.norm(final_gradient))
+
+
+def predict_proba_numpy(X: np.ndarray, beta: np.ndarray) -> np.ndarray:
+    return sigmoid(add_intercept(X) @ beta)
+
+
+def report_training(beta, losses, gradient_norm) -> None:
+    print("Part 3: NumPy logistic regression")
+    print(f"  Settings: learning_rate = {LEARNING_RATE}, epochs = {EPOCHS}, initial coefficients = 0, no regularization")
+    print(f"  Initial training loss: {losses[0]:.6f}")
+    for epoch in [1000, 5000, 10000]:
+        print(f"  Loss after epoch {epoch:5d}: {losses[epoch]:.6f}")
+    print(f"  Final training loss:   {losses[-1]:.6f}")
+    print(f"  Loss change over last 1,000 epochs: {losses[-1001] - losses[-1]:.2e}")
+    print(f"  Final gradient size (norm):         {gradient_norm:.2e}")
+    print("  Learned coefficients (standardized units: per 1 training standard deviation):")
+    for name, value in zip(["beta_0 (intercept)", "beta_1 (mean radius)", "beta_2 (mean texture)"], beta):
+        print(f"    {name:<23}{value:10.6f}")
+    print()
+
+
+def save_loss_plot(losses: np.ndarray, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.figure(figsize=(8, 5))
+    plt.plot(np.arange(len(losses)), losses, linewidth=2)
+    plt.title("NumPy Logistic Regression: Training Loss by Epoch")
+    plt.xlabel("Epoch (0 = before training)")
+    plt.ylabel("Mean binary cross-entropy (training)")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(path, dpi=150)
+    plt.close()
+    print(f"  Saved loss plot to: {path}")
+    print()
+
+
 def main() -> None:
     part1_cases()
 
@@ -94,6 +163,9 @@ def main() -> None:
     X_train, X_val, X_test = scale_features(X, train_idx, val_idx, test_idx)
     y_train, y_val, y_test = y[train_idx], y[val_idx], y[test_idx]
 
+    beta, losses, gradient_norm = fit_numpy_logistic(X_train, y_train, LEARNING_RATE, EPOCHS)
+    report_training(beta, losses, gradient_norm)
+    save_loss_plot(losses, REPORT_DIR / "training_loss.png")
 
 if __name__ == "__main__":
     main()
