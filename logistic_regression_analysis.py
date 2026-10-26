@@ -8,6 +8,8 @@ matplotlib.use("Agg")  # save plots to files without opening a window
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.datasets import load_breast_cancer
+from sklearn.dummy import DummyClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -155,6 +157,41 @@ def save_loss_plot(losses: np.ndarray, path: Path) -> None:
     print()
 
 
+# ----------------------------------------------------------------------
+# Part 4: scikit-learn reference model and majority baseline
+# ----------------------------------------------------------------------
+def fit_reference_models(X_train, y_train):
+    sk_model = LogisticRegression(C=np.inf, solver="lbfgs", max_iter=10000, tol=1e-9)
+    sk_model.fit(X_train, y_train)          # fits its own intercept (no column of ones)
+    baseline = DummyClassifier(strategy="prior")
+    baseline.fit(X_train, y_train)          # learns training class proportions only
+    return sk_model, baseline
+
+
+def predict_proba_positive(model, X: np.ndarray) -> np.ndarray:
+    """Return P(class 1 = malignant), checking which predict_proba column is class 1."""
+    column = list(model.classes_).index(1)
+    return model.predict_proba(X)[:, column]
+
+
+def report_comparison(beta, sk_model, baseline, X_val) -> None:
+    sk_beta = np.concatenate([sk_model.intercept_, sk_model.coef_[0]])
+    print("Part 4: compare NumPy, scikit-learn, and baseline")
+    print(f"  scikit-learn classes_ = {sk_model.classes_.tolist()} -> using column {list(sk_model.classes_).index(1)} for class 1 (malignant)")
+    print(f"  {'Coefficient':<23}{'NumPy':>12}{'scikit-learn':>14}{'Abs diff':>12}")
+    for name, a, b in zip(["beta_0 (intercept)", "beta_1 (mean radius)", "beta_2 (mean texture)"], beta, sk_beta):
+        print(f"  {name:<23}{a:12.6f}{b:14.6f}{abs(a - b):12.2e}")
+
+    p_numpy = predict_proba_numpy(X_val, beta)
+    p_sklearn = predict_proba_positive(sk_model, X_val)
+    print(f"  Mean absolute difference in validation probabilities: {np.mean(np.abs(p_numpy - p_sklearn)):.2e}")
+
+    p_baseline = predict_proba_positive(baseline, X_val)[0]
+    print(f"  Baseline predicts P(malignant) = {p_baseline:.6f} for every sample (training share of malignant)")
+    print("  At threshold 0.50 the baseline therefore labels every sample benign (0).")
+    print()
+
+
 def main() -> None:
     part1_cases()
 
@@ -167,5 +204,8 @@ def main() -> None:
     report_training(beta, losses, gradient_norm)
     save_loss_plot(losses, REPORT_DIR / "training_loss.png")
 
+    sk_model, baseline = fit_reference_models(X_train, y_train)
+    report_comparison(beta, sk_model, baseline, X_val)
+    
 if __name__ == "__main__":
     main()
