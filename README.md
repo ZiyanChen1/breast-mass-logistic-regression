@@ -41,7 +41,7 @@ breast-mass-logistic-regression/
 
 ## How to Run This Project
 
-These steps assume you have never used a terminal, Python, or Git. Follow them in order. The first time takes about 15–20 minutes, mostly for installing software.
+These steps assume you have never used a terminal, Python, or Git. Follow them in order.
 
 **Tip:** You can copy each command from this page and paste it into the terminal. Paste with **Ctrl + V** (Windows) or **Command + V** (Mac), then press **Enter**.
 
@@ -159,7 +159,7 @@ python -m pip install -r requirements.txt
 python3 -m pip install -r requirements.txt
 ```
 
-This installs NumPy, scikit-learn, and Matplotlib. It takes about 1–2 minutes and needs an internet connection. The dataset comes with scikit-learn, so nothing else needs to be downloaded.
+This installs NumPy, scikit-learn, and Matplotlib. It needs an internet connection. The dataset comes with scikit-learn, so nothing else needs to be downloaded.
 
 ### Step 9: Run the program
 
@@ -173,7 +173,7 @@ python logistic_regression_analysis.py
 python3 logistic_regression_analysis.py
 ```
 
-The program takes about 5 seconds. Wait until it finishes.
+Wait until the program finishes.
 
 When you are done, you can type `deactivate` to turn off the virtual environment.
 
